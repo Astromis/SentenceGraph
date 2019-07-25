@@ -68,7 +68,7 @@ class Model:
 # Can be used as
 
 #model = Model('./models/rus_model.udpipe')
-#text = '''что это за базовая трафикация, зачем она нужна и можно ли ее отключить?'''
+#text = '''я пополнил сегодня телефон на 430 рублей, на счёт поступило 260 и пришла смс, что подписка на эплмюзик возобновлена. Почему это произошло, вы можете мне объяснить?'''
 #sentences = model.tokenize(text)
 #for s in sentences:
 #  model.tag(s)
