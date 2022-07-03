@@ -1,10 +1,11 @@
 from conllu import parse
 from collections import defaultdict
-from udpipe_model import Model
+from .udpipe_model import Model
 import networkx as nx
 import matplotlib.pyplot as plt
-import pydot
-from networkx.drawing.nx_pydot import graphviz_layout
+from tqdm.auto import tqdm
+#import pydot
+#from networkx.drawing.nx_pydot import graphviz_layout
 
 class WordVertex:
     '''     
@@ -44,16 +45,17 @@ class SentenceGraph:
         It takes the sentence writen in conluu-2014 format and produces
         hendfull structure to operate it as a graph.
     '''
-    def __init__(self, conllu_sentence):
+    def __init__(self, conllu_sentence, syntax_parse=True):
         self.clause_map = [[]]
         self.links = []
 
         self._build_graph(conllu_sentence)
-        self._add_root()
-        self._fill_children_verticles()
-        self._fill_head_verticles()
-        self._split_by_clause()
-    
+        if syntax_parse:
+            self._add_root()
+            self._fill_children_verticles()
+            self._fill_head_verticles()
+            self._split_by_clause()
+        
     def __getitem__(self, key):
         return self.links[key]
     
@@ -223,17 +225,18 @@ class TextParser:
     def __init__(self, udpipe_model_path):
         self.model = Model(udpipe_model_path)
 
-    def parse(self, text):
+    def parse(self, text, syntax_parse=True):
         '''
         Parse the text into list of SentenceGraphs
         '''
         sentence_graphs = []
         sentences = self.model.tokenize(text)
-        for s in sentences:
+        for s in tqdm(sentences, desc="UDPipe parsing"):
                 self.model.tag(s)
-                self.model.parse(s)
+                if syntax_parse:
+                    self.model.parse(s)
         sents_conllu = self.model.write(sentences, "conllu")
-        for sent in parse(sents_conllu):
-            sentence_graphs.append(SentenceGraph(sent))
+        for sent in tqdm(parse(sents_conllu), desc="Conllu parsing"):
+            sentence_graphs.append(SentenceGraph(sent, syntax_parse))
     
         return sentence_graphs
