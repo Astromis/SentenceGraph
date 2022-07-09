@@ -4,8 +4,7 @@ from .udpipe_model import Model
 import networkx as nx
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
-#import pydot
-#from networkx.drawing.nx_pydot import graphviz_layout
+from networkx.drawing.nx_pydot import graphviz_layout
 
 class WordVertex:
     '''     
@@ -13,9 +12,10 @@ class WordVertex:
         Dictionary data are got from ConLLU-2014
     '''
     __slots__ = ["data"]
-    def __init__(self, id: int, head:int, lemma: str, pos:str, deprel:str, form:str, morpho:str):
+    def __init__(self, wid: int, head:int, lemma: str, pos:str, deprel:str, form:str, morpho:str):
+        # FIXME: It seems that hlink is redundunt
         self.data = {
-        "id" : id,
+        "wid" : wid,
         "lemma" : lemma,
         "head" : head,
         "hlink" : None,
@@ -25,6 +25,9 @@ class WordVertex:
         "form" : form,
         "morpho" :   morpho,
         }
+        
+        #for k,v in self.data.items():
+        #    setattr(self, k, v)
         
     def __getitem__(self, key):
         return self.data[key]
@@ -36,7 +39,7 @@ class WordVertex:
         return self.data['form']
 
     def __repr__(self):
-        return '{}_ID-{}<WordVertex>'.format(self.data['form'], self.data['id'])
+        return '{}_WID-{}<WordVertex>'.format(self.data['form'], self.data['wid'])
     
 
 class SentenceGraph:
@@ -46,8 +49,9 @@ class SentenceGraph:
         hendfull structure to operate it as a graph.
     '''
     def __init__(self, conllu_sentence, syntax_parse=True):
+        # FIXME: the clause map is not suppose to be here
         self.clause_map = [[]]
-        self.links = []
+        self.w_vertices = []
 
         self._build_graph(conllu_sentence)
         if syntax_parse:
@@ -57,16 +61,16 @@ class SentenceGraph:
             self._split_by_clause()
         
     def __getitem__(self, key):
-        return self.links[key]
+        return self.w_vertices[key]
     
     def __repr__(self):
-        sent_len = len(self.links)
+        sent_len = len(self.w_vertices)
         representation_len =  sent_len if sent_len < 5 else 5
         repr_str = "{} " * representation_len
         repr_str += "...<SentenceGraph>"
-        return repr_str.format(*self.links[:sent_len])
+        return repr_str.format(*self.w_vertices[:sent_len])
 
-    def by_word(self, word):
+    def search_by_word(self, word):
         """
         Search the nodes by word 
         (due to some sentence might contain several same words
@@ -83,21 +87,21 @@ class SentenceGraph:
             morph = ''
             if i['feats'] != None:
                 morph = "|".join([k+'='+ v for k,v in i['feats'].items() ])
-            self.links.append( WordVertex( i['id'], i['head'], i['lemma'], i['upostag'], i['deprel'], i['form'], morph) )
+            self.w_vertices.append( WordVertex( i['id'], i['head'], i['lemma'], i['upostag'], i['deprel'], i['form'], morph) )
         
     def _orig_dtype(self, node):
-        dtype= self.links[node]['hlink']['head_link_attr'] 
+        dtype= self.w_vertices[node]['hlink']['head_link_attr'] 
         if dtype==u"conj":  
-            return self._orig_dtype(self.links[node]['hlink']['id'])
-        else: return dtype, self.links[node]["morpho"]
+            return self._orig_dtype(self.w_vertices[node]['hlink']['wid'])
+        else: return dtype, self.w_vertices[node]["morpho"]
 
     def _DFS(self, node, idx, indexes, hier):
 
         types = "ccomp advcl acl:relcl".split()
-        dtype = self.links[node]['head_link_attr']
+        dtype = self.w_vertices[node]['head_link_attr']
         new_idx = idx
         if dtype in types: # this is a new clause, use idx + '.' + next number
-            if dtype == u"ccomp" and (u"Case=Gen" in self.links[node]['morpho'] or u"Case=Tra" in self.links[node]['morpho']):
+            if dtype == u"ccomp" and (u"Case=Gen" in self.w_vertices[node]['morpho'] or u"Case=Tra" in self.w_vertices[node]['morpho']):
                 pass
             suffix = max(hier.get(idx)) if idx in hier else 0
             new_idx = idx + "." + str(suffix + 1)
@@ -106,7 +110,7 @@ class SentenceGraph:
         elif dtype==u"conj": # coordination of two subclauses or coordination from sentence root, split from last '.' and add next number
             t, _ = self._orig_dtype(node) 
             if t in types or t == u"root":
-                if dtype == u"ccomp" and (u"Case=Gen" in self.links[node]['morpho'] or u"Case=Tra" in self.links[node]['morpho']):
+                if dtype == u"ccomp" and (u"Case=Gen" in self.w_vertices[node]['morpho'] or u"Case=Tra" in self.w_vertices[node]['morpho']):
                     pass
                 id, suffix = idx.rsplit(u".",1)
                 suffix = max(hier.get(id)) if id in hier else 1
@@ -115,9 +119,9 @@ class SentenceGraph:
                 self.clause_map.append([])
         # assign the idx for the node
         indexes[node] = new_idx
-        self.clause_map[-1].append(self.links[node]['id'])
-        for child in sorted(self.links[node]['children'], key=lambda x: x['id']): 
-            self._DFS( child['id'], new_idx, indexes, hier)
+        self.clause_map[-1].append(self.w_vertices[node]['wid'])
+        for child in sorted(self.w_vertices[node]['children'], key=lambda x: x['wid']): 
+            self._DFS( child['wid'], new_idx, indexes, hier)
 
     def _split_by_clause(self, ):
         '''
@@ -134,7 +138,7 @@ class SentenceGraph:
         Find nodes depending on the given property and attributes 
         '''
         ans = []
-        for i in self.links:
+        for i in self.w_vertices:
             if match == i[attr]:
                 ans.append(i)
         return ans
@@ -146,7 +150,7 @@ class SentenceGraph:
         root = WordVertex(0, 0, 'root', '', 'root', 'root', '')
         root['hlink'] = root
         root['children'].append(self.find(0, 'head')[0])
-        self.links.insert(0, root)      
+        self.w_vertices.insert(0, root)      
 
     """ def remove(self, link_id):
         '''
@@ -159,18 +163,18 @@ class SentenceGraph:
             Chains the WordVertexs head by head with:
             fill the head field in WordVertexs instance
         '''
-        for i in self.links:
+        for i in self.w_vertices:
             #if i.head != 0:
-            i['hlink'] = self.find(i['head'], 'id')[0]
+            i['hlink'] = self.find(i['head'], 'wid')[0]
         
     def _fill_children_verticles(self):
         '''
             Fill the child field in WordVertexs instance with all children nodes
         '''
-        for i in self.links:
+        for i in self.w_vertices:
             if i['head'] == 0:
                 continue
-            finded_link = self.find(i['head'], 'id')[0]
+            finded_link = self.find(i['head'], 'wid')[0]
             finded_link['children'].append(i)
 
     def get_clauses(self,):
@@ -182,40 +186,53 @@ class SentenceGraph:
         for sub in self.clause_map:
             new_sub = []
             for i in sorted(sub):
-                new_sub.append((self.links[i].form))
+                new_sub.append((self.w_vertices[i]['form']))
             sub_sents.append(' '.join(new_sub))
         return sub_sents
 
-    def get_nx(self, proprerties=[]):
+    def get_nx(self, property="form"):
         '''
-        Plot graph with NetworkX
-        proprerty None or list of properties
+        Get sentence graph as NetworkX DiGraph
+        proprerty see plot()
         '''
         g = nx.DiGraph()
-        def property_filter(z, j): 
-            return {x:y for x,y in z.data.items() if x in j or len(j) == 0}
-        #g.add_nodes_from([(x['id'], {proprerty: x['proprerty']} ) for x in self.links])
-        g.add_nodes_from([(vex['id'], property_filter(vex, proprerties) ) for vex in self.links])
-        g.add_edges_from([(x['hlink']['id'], x['id'], ) for x in self.links])
+
+        # FIXME: functions inside funcion is evel
+        def punk_repl (str_):
+            punct_map = [
+            (',', "*зпт*"),
+            ('.', "*тчк*")
+            ]
+            for punk, val in punct_map:
+                str_ = str_.replace(punk, val)
+            return str_
+
+        def get_property(z, j):
+            if j == ("form" or "lemma"):
+                return {x:punk_repl(y) for x,y in z.data.items() if x == j or len(j) == 0}
+            else:
+                return {x:y for x,y in z.data.items() if x in j or len(j) == 0}
+        g.add_nodes_from([(vex['wid'], get_property(vex, property) ) for vex in self.w_vertices])
+        g.add_edges_from([(x['hlink']['wid'], x['wid'], ) for x in self.w_vertices])
         return g
     
-    def plot(self, fsize=(16,10), propertie="pos"):
+    def plot(self, fsize=(16,10), property="form"):
         """
-        Currently works with pos, id, morpho
+        Plot graph with NetworkX
+        proprerty One of ["form", "pos", "wid", "morpho"] that will be node annotation
         """
-        G = self.get_nx([propertie])
+        if property not in ["form", "pos", "wid", "morpho"]:
+            raise ValueError("Wrong property name")
+        G = self.get_nx(property)
         plt.figure(figsize=fsize)
         H = nx.convert_node_labels_to_integers(G,)
-        mapping = {x:G.nodes()[y][propertie] for x,y in enumerate(G.nodes())}
-        pos = graphviz_layout(H, prog="dot")
-        nx.draw_networkx(G, pos, nodelist=None, labels=mapping)#pos
+        mapping = {x:G.nodes()[y][property] for x,y in enumerate(G.nodes())}
+        try:
+            pos = graphviz_layout(H, prog="dot")
+            nx.draw_networkx(G, pos, nodelist=None, labels=mapping)
+        except FileNotFoundError:
+            raise ImportError("Looks like you forget to install graphviz program. Please, install it typing in console 'sudo apt install graphviz'")
         plt.show()
-        #plt.figure(figsize=fsize)
-        #H = nx.convert_node_labels_to_integers(g,)
-        #mapping = {x:y for x,y in enumerate(g.nodes())}
-        #pos = graphviz_layout(H, prog="dot")
-        #nx.draw_networkx(g, pos, nodelist=None)#pos
-        #plt.show()
 
 class TextParser:
     '''

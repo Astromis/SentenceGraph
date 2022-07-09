@@ -26,7 +26,8 @@ setuptools.setup(
         'conllu==1.3.1',
         'ufal.udpipe==1.2.0.3',
         'networkx==2.1',
-        'matplotlib==2.2.3'
+        'matplotlib==2.2.3',
+        'graphviz==0.20'
     ],
     include_package_data=True,
 )
