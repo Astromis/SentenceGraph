@@ -11,7 +11,8 @@ class WordVertex:
         This class represents a node word in sentence dependancy graph.
         Dictionary data are got from ConLLU-2014
     '''
-    __slots__ = ["data"]
+    __slots__ = ["data", "wid", "lemma", "head", "hlink", "pos", "head_link_attr", "children", "form", "morpho"]
+    
     def __init__(self, wid: int, head:int, lemma: str, pos:str, deprel:str, form:str, morpho:str):
         # FIXME: It seems that hlink is redundunt
         self.data = {
@@ -26,8 +27,8 @@ class WordVertex:
         "morpho" :   morpho,
         }
         
-        #for k,v in self.data.items():
-        #    setattr(self, k, v)
+        for k,v in self.data.items():
+            setattr(self, k, v)
         
     def __getitem__(self, key):
         return self.data[key]
