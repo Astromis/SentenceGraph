@@ -111,6 +111,15 @@ class SentenceGraph:
         repr_str += "...<SentenceGraph>"
         return repr_str.format(*self.w_vertices[:sent_len])
 
+    def get_source(self):
+        """Returns space concatatenated source text 
+
+        Returns:
+            str: Soure text
+        """ 
+        self.w_vertices.sort(key=lambda x: x.wid)
+        return " ".join([w.form for w in self.w_vertices[1:]])
+
     def search_by_word(self, word):
         """
         Search the nodes by word 
