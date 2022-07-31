@@ -125,6 +125,31 @@ class SentenceGraph:
         """
         return " ".join([w.form for w in self.w_vertices[1:]])
 
+    def _get_np(self, node, np):
+        if node["pos"] == "NOUN":
+            np.append(node)
+        if len(node["children"]) == 0:
+            return
+        else:
+            for c in node["children"]:    
+                self._get_np(c, np)
+    
+    def get_np(self, start_node=None):
+        """Return a list of Noun Phrases of the text
+
+        Args:
+            start_node (WordVertex): A start word node
+        
+        Returns:
+            list: Existed noun phrases
+        """
+        noun_phrases = []
+        if start_node != None:
+            self._get_np(start_node, noun_phrases)
+        else:
+            self._get_np(self.root, noun_phrases)
+        return noun_phrases
+
     def search_by_word(self, word):
         """
         Search the nodes by word 
