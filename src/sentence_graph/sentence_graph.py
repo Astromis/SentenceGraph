@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from conllu import parse
 from collections import defaultdict
 from .udpipe_model import Model
@@ -6,13 +7,52 @@ import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 from networkx.drawing.nx_pydot import graphviz_layout
 
+
+class Morpho:
+    """
+    Represents a morphological featues with universal dependencies format
+    """
+    def __init__(self, feature_dict):
+        for k,v in feature_dict.items():
+            setattr(self, k.lower(), v)
+
+    """ # nominal
+    gender: str = None
+    animacy: str = None
+    nounclass: str = None
+    number: str = None
+    case: str = None
+    definite: str = None
+    degree: str = None
+    # verbal
+    verbform: str = None
+    mood: str = None
+    tense: str = None
+    aspect: str = None
+    voice: str = None
+    evident: str = None
+    polarity: str = None
+    person: str = None
+    polite: str = None
+    clusivity: str = None
+    # lexical features
+    prontype: str = None
+    numtype: str = None
+    poss: str = None
+    reflex: str = None
+    foreign: str = None
+    abbr: str = None
+    typo: str = None """
+
+
+
 class WordVertex:
     '''     
         This class represents a node word in sentence dependancy graph.
         Dictionary data are got from ConLLU-2014
     '''
     __slots__ = ["data", "wid", "lemma", "head", "hlink", "pos", "head_link_attr", "children", "form", "morpho"]
-    
+
     def __init__(self, wid: int, head:int, lemma: str, pos:str, deprel:str, form:str, morpho:str):
         # FIXME: It seems that hlink is redundunt
         self.data = {
@@ -85,9 +125,10 @@ class SentenceGraph:
         Build graph from sentence representing in CoNLLU-2014 format
         '''
         for i in conllu_sentence:
-            morph = ''
+            morph = None
             if i['feats'] != None:
-                morph = "|".join([k+'='+ v for k,v in i['feats'].items() ])
+                # morph = "|".join([k+'='+ v for k,v in i['feats'].items() ])
+                morph = Morpho(i['feats'])
             self.w_vertices.append( WordVertex( i['id'], i['head'], i['lemma'], i['upostag'], i['deprel'], i['form'], morph) )
         
     def _orig_dtype(self, node):
@@ -148,7 +189,7 @@ class SentenceGraph:
         '''
             Add root node explicity
         '''
-        root = WordVertex(0, 0, 'root', '', 'root', 'root', '')
+        root = WordVertex(0, 0, 'root', '', 'root', 'root', None)
         root['hlink'] = root
         root['children'].append(self.find(0, 'head')[0])
         self.w_vertices.insert(0, root)      
