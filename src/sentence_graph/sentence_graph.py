@@ -6,7 +6,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 from networkx.drawing.nx_pydot import graphviz_layout
-
+from typing import List
 
 class Morpho:
     """
@@ -91,17 +91,15 @@ class SentenceGraph:
         hendfull structure to operate it as a graph.
     '''
 
-    def __init__(self, conllu_sentence, syntax_parse=True):
+    def __init__(self, wv_list: List[WordVertex] = None):
         # FIXME: the clause map is not suppose to be here
         self.clause_map = [[]]
         self.w_vertices = []
+        if wv_list != None:
+            self.w_vertices = wv_list
+        
         self.root = None
 
-        self._build_graph(conllu_sentence)
-        if syntax_parse:
-            self._add_root()
-            self._fill_children_verticles()
-            self._fill_head_verticles()
         
 
     def __getitem__(self, key):
@@ -159,17 +157,6 @@ class SentenceGraph:
         """
         return self.find(word, 'form')
 
-    def _build_graph(self, conllu_sentence):
-        '''
-        Build graph from sentence representing in CoNLLU-2014 format
-        '''
-        for i in conllu_sentence:
-            morph = None
-            if i['feats'] != None:
-                # morph = "|".join([k+'='+ v for k,v in i['feats'].items() ])
-                morph = Morpho(i['feats'])
-            self.w_vertices.append(WordVertex(
-                i['id'], i['head'], i['lemma'], i['upostag'], i['deprel'], i['form'], morph))
 
     def _orig_dtype(self, node):
         dtype = self.w_vertices[node]['hlink']['head_link_attr']
@@ -226,41 +213,11 @@ class SentenceGraph:
                 ans.append(i)
         return ans
 
-    def _add_root(self,):
-        '''
-            Add root node explicity
-        '''
-        root = WordVertex(0, 0, 'root', '', 'root', 'root', None)
-        root['hlink'] = root
-        actual_root_word = self.find(0, 'head')[0]
-        self.root = actual_root_word
-        root['children'].append(actual_root_word)
-        self.w_vertices.insert(0, root)
+    def remove_node(self, word_id):
+        self.w_vertices.remove(word_id)
 
-    """ def remove(self, link_id):
-        '''
-            Remove node from the graph
-        '''
-        self.links.remove(link_id) """
-
-    def _fill_head_verticles(self,):
-        '''
-            Chains the WordVertexs head by head with:
-            fill the head field in WordVertexs instance
-        '''
-        for i in self.w_vertices:
-            # if i.head != 0:
-            i['hlink'] = self.find(i['head'], 'wid')[0]
-
-    def _fill_children_verticles(self):
-        '''
-            Fill the child field in WordVertexs instance with all children nodes
-        '''
-        for i in self.w_vertices:
-            if i['head'] == 0:
-                continue
-            finded_link = self.find(i['head'], 'wid')[0]
-            finded_link['children'].append(i)
+    def add_node(self, wv: WordVertex):
+        self.w_vertices.append(wv)
 
     def get_clauses(self,):
         '''
@@ -346,7 +303,60 @@ class TextParser:
             if syntax_parse:
                 self.model.parse(s)
         sents_conllu = self.model.write(sentences, "conllu")
-        for sent in parse(sents_conllu):
-            sentence_graphs.append(SentenceGraph(sent, syntax_parse))
+        parsed_conllu = parse(sents_conllu)
+        if verbose:
+            parsed_conllu = tqdm(parsed_conllu, desc="Building Sentence Graphs")
+        for sent in parsed_conllu:
+            sentence_graphs.append(self._build_graph(sent, syntax_parse))
 
         return sentence_graphs
+
+    def _build_graph(self, conllu_sentence, syntax_parse=True):
+        '''
+        Build graph from sentence representing in CoNLLU-2014 format
+        '''
+        sg = SentenceGraph()
+        for i in conllu_sentence:
+            morph = None
+            if i['feats'] != None:
+                # morph = "|".join([k+'='+ v for k,v in i['feats'].items() ])
+                morph = Morpho(i['feats'])
+            sg.add_node(WordVertex(
+                i['id'], i['head'], i['lemma'], i['upostag'], i['deprel'], i['form'], morph))
+
+        if syntax_parse:
+            self._add_root(sg)
+            self._fill_children_verticles(sg)
+            self._fill_head_verticles(sg)
+        
+        return sg
+
+    def _add_root(self, sg: SentenceGraph):
+        '''
+            Add root node explicity
+        '''
+        root = WordVertex(0, 0, 'root', '', 'root', 'root', None)
+        root['hlink'] = root
+        actual_root_word = sg.find(0, 'head')[0]
+        sg.root = actual_root_word
+        root['children'].append(actual_root_word)
+        sg.w_vertices.insert(0, root)
+
+    def _fill_head_verticles(self, sg: SentenceGraph):
+        '''
+            Chains the WordVertexs head by head with:
+            fill the head field in WordVertexs instance
+        '''
+        for i in sg.w_vertices:
+            # if i.head != 0:
+            i['hlink'] = sg.find(i['head'], 'wid')[0]
+
+    def _fill_children_verticles(self, sg: SentenceGraph):
+        '''
+            Fill the child field in WordVertexs instance with all children nodes
+        '''
+        for i in sg.w_vertices:
+            if i['head'] == 0:
+                continue
+            finded_link = sg.find(i['head'], 'wid')[0]
+            finded_link['children'].append(i)
