@@ -333,18 +333,20 @@ class TextParser:
     def __init__(self, udpipe_model_path):
         self.model = Model(udpipe_model_path)
 
-    def parse(self, text, syntax_parse=True):
+    def parse(self, text, syntax_parse=True, verbose=False):
         '''
         Parse the text into list of SentenceGraphs
         '''
         sentence_graphs = []
         sentences = self.model.tokenize(text)
-        for s in tqdm(sentences, desc="UDPipe parsing"):
+        if verbose:
+            sentences = tqdm(sentences, desc="UDPipe parsing")
+        for s in sentences:
             self.model.tag(s)
             if syntax_parse:
                 self.model.parse(s)
         sents_conllu = self.model.write(sentences, "conllu")
-        for sent in tqdm(parse(sents_conllu), desc="Conllu parsing"):
+        for sent in parse(sents_conllu):
             sentence_graphs.append(SentenceGraph(sent, syntax_parse))
 
         return sentence_graphs
