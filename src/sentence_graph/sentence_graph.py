@@ -1,12 +1,16 @@
-from dataclasses import dataclass
-from conllu import parse
 from collections import defaultdict
-from .udpipe_model import Model
-import networkx as nx
-import matplotlib.pyplot as plt
-from tqdm.auto import tqdm
-from networkx.drawing.nx_pydot import graphviz_layout
+from dataclasses import dataclass
 from typing import List
+
+import matplotlib.pyplot as plt
+import networkx as nx
+from conllu import parse
+from networkx.drawing.nx_pydot import graphviz_layout
+from tqdm.auto import tqdm
+
+from .udpipe_model import Model
+from .utils import UD2MYSTEM_GENDER_MAP, get_property
+
 
 class Morpho:
     """
@@ -51,6 +55,7 @@ class WordVertex:
         This class represents a node word in sentence dependancy graph.
         Dictionary data are got from ConLLU-2014
     '''
+    #FIXME: change the name 'head' and hlink to more meaningful one 
     __slots__ = ["data", "wid", "lemma", "head", "hlink",
                  "pos", "head_link_attr", "children", "form", "morpho"]
 
@@ -94,6 +99,7 @@ class SentenceGraph:
     def __init__(self, wv_list: List[WordVertex] = None):
         # FIXME: the clause map is not suppose to be here
         self.clause_map = [[]]
+        self.id_set = set()
         self.w_vertices = []
         if wv_list != None:
             self.w_vertices = wv_list
@@ -207,6 +213,7 @@ class SentenceGraph:
         '''
         Find nodes depending on the given property and attributes 
         '''
+        # FIXME: add attr checker
         ans = []
         for i in self.w_vertices:
             if match == i[attr]:
@@ -214,10 +221,35 @@ class SentenceGraph:
         return ans
 
     def remove_node(self, word_id):
-        self.w_vertices.remove(word_id)
+        to_remove = self.find(word_id, "wid")[0]
+        for i, c in enumerate(to_remove.hlink.children):
+            if c.wid == to_remove.wid:
+                to_remove.hlink.children.remove(i)
+        def remove(wv):
+            if not wv.children:
+                self.w_vertices.remove(wv.wid)
+                return
+            for ch in wv.children:
+                self.rem(ch)
+            self.w_vertices.remove(wv.word_id)
+        remove(to_remove)
+        #self.w_vertices.remove(word_id)
 
     def add_node(self, wv: WordVertex):
+        if isinstance(wv.head, int):
+            AttributeError("To add the node, it has to have a head attribute")
+        if wv.hlink < 0 and wv.head > len(self.w_vertices) - 1:
+            return ValueError(f"The head attribute must be in range from 0 to max word count ({len(self.w_vertices)} here)")
+        wv.wid = len(self.id_set)
+        self._add_node(wv)
+        found_link = self.w_vertices(wv['head'], 'wid')[0]
+        found_link['children'].append(self.w_vertices[-1])
+        wv.hlink = found_link
+        
+
+    def _add_node(self, wv):
         self.w_vertices.append(wv)
+        self.id_set.add(wv.wid)
 
     def get_clauses(self,):
         '''
@@ -240,21 +272,6 @@ class SentenceGraph:
         '''
         g = nx.DiGraph()
 
-        # FIXME: functions inside funcion is evel
-        def punk_repl(str_):
-            punct_map = [
-                (',', "*зпт*"),
-                ('.', "*тчк*")
-            ]
-            for punk, val in punct_map:
-                str_ = str_.replace(punk, val)
-            return str_
-
-        def get_property(z, j):
-            if j == ("form" or "lemma"):
-                return {x: punk_repl(y) for x, y in z.data.items() if x == j or len(j) == 0}
-            else:
-                return {x: y for x, y in z.data.items() if x in j or len(j) == 0}
         g.add_nodes_from([(vex['wid'], get_property(vex, property))
                          for vex in self.w_vertices])
         g.add_edges_from([(x['hlink']['wid'], x['wid'], )
@@ -290,7 +307,7 @@ class TextParser:
     def __init__(self, udpipe_model_path):
         self.model = Model(udpipe_model_path)
 
-    def parse(self, text, syntax_parse=True, verbose=False):
+    def parse(self, text, syntax_parse=True, verbose=False, mystem_gender_translate=False):
         '''
         Parse the text into list of SentenceGraphs
         '''
@@ -307,11 +324,11 @@ class TextParser:
         if verbose:
             parsed_conllu = tqdm(parsed_conllu, desc="Building Sentence Graphs")
         for sent in parsed_conllu:
-            sentence_graphs.append(self._build_graph(sent, syntax_parse))
+            sentence_graphs.append(self._build_graph(sent, syntax_parse, mystem_gender_translate))
 
         return sentence_graphs
 
-    def _build_graph(self, conllu_sentence, syntax_parse=True):
+    def _build_graph(self, conllu_sentence, syntax_parse=True, mystem_translate=False):
         '''
         Build graph from sentence representing in CoNLLU-2014 format
         '''
@@ -321,7 +338,9 @@ class TextParser:
             if i['feats'] != None:
                 # morph = "|".join([k+'='+ v for k,v in i['feats'].items() ])
                 morph = Morpho(i['feats'])
-            sg.add_node(WordVertex(
+                if mystem_translate:
+                    morph.gender = UD2MYSTEM_GENDER_MAP[morph.gender]
+            sg._add_node(WordVertex(
                 i['id'], i['head'], i['lemma'], i['upostag'], i['deprel'], i['form'], morph))
 
         if syntax_parse:
