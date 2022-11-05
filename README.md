@@ -14,7 +14,7 @@ $ sudo apt install python-pydot python-pydot-ng graphviz
 ```
 # Where to get a UDPipe model
 
-Currently, the Russian UDpipe model is provided. You can train your own model for other languages. English model, in particular, can be found [here](https://lindat.mff.cuni.cz/repository/xmlui/handle/11234/1-2998). The guide how to train your own model, see [here](https://astromis.github.io/2019/05/15/discover_the_udpipe.html). 
+You can download the Russian model that I've trained by [this link](https://drive.google.com/file/d/1U8ggulRWaoGBRZNpaA-7H6hg_rKG_-BP/view?usp=sharing) You can train your own model for other languages. English model, in particular, can be found [here](https://lindat.mff.cuni.cz/repository/xmlui/handle/11234/1-2998). The guide how to train your own model, see [here](https://astromis.github.io/2019/05/15/discover_the_udpipe.html). 
 # Relateg projects:
 
 * [UDPipe](https://github.com/ufal/udpipe)
