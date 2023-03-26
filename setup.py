@@ -27,7 +27,8 @@ setuptools.setup(
         'ufal.udpipe==1.2.0.3',
         'networkx==2.1',
         'matplotlib==2.2.3',
-        'graphviz==0.20'
+        'graphviz==0.20',
+        'pymorphy2==0.9.1'
     ],
     include_package_data=True,
 )
