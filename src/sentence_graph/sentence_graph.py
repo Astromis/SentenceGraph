@@ -1,6 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -97,8 +97,6 @@ class SentenceGraph:
     '''
 
     def __init__(self, wv_list: List[WordVertex] = None):
-        # FIXME: the clause map is not suppose to be here
-        self.clause_map = [[]]
         self.id_set = set()
         self.w_vertices = []
         if wv_list != None:
@@ -109,17 +107,17 @@ class SentenceGraph:
         
 
     def __getitem__(self, key):
-        return self.w_vertices[key+1]
+        return self.w_vertices[key]
 
     def __len__(self):
-        return len(self.w_vertices) - 1
+        return len(self.w_vertices) 
 
     def __repr__(self):
-        sent_len = len(self.w_vertices) - 1
+        sent_len = len(self.w_vertices) 
         representation_len = sent_len if sent_len < 5 else 5
         repr_str = "{} " * representation_len
         repr_str += "...<SentenceGraph>"
-        return repr_str.format(*self.w_vertices[1:sent_len])
+        return repr_str.format(*self.w_vertices[:sent_len])
 
     def get_source(self):
         """Returns space concatatenated source text 
@@ -171,7 +169,7 @@ class SentenceGraph:
         else:
             return dtype, self.w_vertices[node]["morpho"]
 
-    def _DFS(self, node, idx, indexes, hier):
+    def _DFS(self, node, idx, indexes, hier, clause_map):
 
         types = "ccomp advcl acl:relcl".split()
         dtype = self.w_vertices[node]['head_link_attr']
@@ -195,11 +193,11 @@ class SentenceGraph:
                 self.clause_map.append([])
         # assign the idx for the node
         indexes[node] = new_idx
-        self.clause_map[-1].append(self.w_vertices[node]['wid'])
+        clause_map[-1].append(self.w_vertices[node]['wid'])
         for child in sorted(self.w_vertices[node]['children'], key=lambda x: x['wid']):
-            self._DFS(child['wid'], new_idx, indexes, hier)
+            self._DFS(child['wid'], new_idx, indexes, hier, clause_map)
 
-    def _split_by_clause(self, ):
+    def _split_by_clause(self, clause_map):
         '''
         Split the sentence into clauses
         '''
@@ -207,8 +205,24 @@ class SentenceGraph:
         # now dictionary is ready, start search from root
         indexes = {}
         hier = defaultdict(lambda: set())  # wipe the set
-        self._DFS(0, str(count)+'.1', indexes, hier)
+        self._DFS(0, str(count)+'.1', indexes, hier, clause_map)
 
+    def get_clauses(self,):
+        '''
+            Return a list of clauses
+        '''
+        clause_map = [[]]
+        self._split_by_clause(clause_map)
+        sub_sents = []
+        
+        clause_map[0].remove(0)
+        for sub in clause_map:
+            new_sub = []
+            for i in sorted(sub):
+                new_sub.append((self.w_vertices[i]['form']))
+            sub_sents.append(' '.join(new_sub))
+        return sub_sents
+    
     def find(self, match, attr):
         '''
         Find nodes depending on the given property and attributes 
@@ -251,31 +265,25 @@ class SentenceGraph:
         self.w_vertices.append(wv)
         self.id_set.add(wv.wid)
 
-    def get_clauses(self,):
-        '''
-            Return a list of clauses
-        '''
-        self._split_by_clause()
-        sub_sents = []
-        self.clause_map[0].remove(0)
-        for sub in self.clause_map:
-            new_sub = []
-            for i in sorted(sub):
-                new_sub.append((self.w_vertices[i]['form']))
-            sub_sents.append(' '.join(new_sub))
-        return sub_sents
-
     def get_nx(self, property="form"):
         '''
         Get sentence graph as NetworkX DiGraph
         proprerty see plot()
         '''
         g = nx.DiGraph()
+        nodes = [(vex['wid'], get_property(vex, property))
+                         for vex in self.w_vertices]
+        edges = [(x['hlink']['wid'], x['wid'], )
+                         for x in self.w_vertices if x['hlink'] != None]
+        # don't forget to add a virtual root node
+        nodes.append((0, {property : "root"}))
+        edges.append((0, self.root.wid))
+        nodes.sort(key=lambda x: x[0])
+        edges.sort(key=lambda x: x[0])
 
-        g.add_nodes_from([(vex['wid'], get_property(vex, property))
-                         for vex in self.w_vertices])
-        g.add_edges_from([(x['hlink']['wid'], x['wid'], )
-                         for x in self.w_vertices])
+        g.add_nodes_from(nodes)
+        g.add_edges_from(edges)
+        
         return g
 
     def plot(self, fsize=(16, 10), property="form"):
@@ -354,12 +362,8 @@ class TextParser:
         '''
             Add root node explicity
         '''
-        root = WordVertex(0, 0, 'root', '', 'root', 'root', None)
-        root['hlink'] = root
         actual_root_word = sg.find(0, 'head')[0]
         sg.root = actual_root_word
-        root['children'].append(actual_root_word)
-        sg.w_vertices.insert(0, root)
 
     def _fill_head_verticles(self, sg: SentenceGraph):
         '''
@@ -367,8 +371,8 @@ class TextParser:
             fill the head field in WordVertexs instance
         '''
         for i in sg.w_vertices:
-            # if i.head != 0:
-            i['hlink'] = sg.find(i['head'], 'wid')[0]
+            if i.head != 0:
+                i['hlink'] = sg.find(i['head'], 'wid')[0]
 
     def _fill_children_verticles(self, sg: SentenceGraph):
         '''
