@@ -89,28 +89,132 @@ class WordVertex:
         return '{}_WID-{}<WordVertex>'.format(self.data['form'], self.data['wid'])
 
 
-class SentenceGraph:
-    '''
-        This class represents a whole sentence dependency tree.
-        It takes the sentence writen in conluu-2014 format and produces
-        hendfull structure to operate it as a graph.
-    '''
+class Span:
+    """The class represents the group of WordVerts. It's not nessesary to be
+    a valid UD parsed phrase.
 
-    def __init__(self, wv_list: List[WordVertex] = None):
-        self.id_set = set()
+    """
+    
+    def __init__(self, wv_list: Tuple[List[WordVertex], None], root_idx: Optional[Tuple[int, None]]) -> None:
         self.w_vertices = []
-        if wv_list != None:
+        self.id_set = set()
+        if wv_list is not None:
             self.w_vertices = wv_list
-        
-        self.root = None
-
-        
+            for w in wv_list:
+                self.id_set.add(w.wid)
+        if root_idx is not None and wv_list is not None:
+            self.root = self.w_vertices[root_idx]
+        else:
+            self.root = None
 
     def __getitem__(self, key):
         return self.w_vertices[key]
 
     def __len__(self):
         return len(self.w_vertices) 
+    
+    def get_source(self):
+        """Returns space concatatenated source text 
+
+        Returns:
+            str: Soure text
+        """
+        return " ".join([w.form for w in self.w_vertices])
+    
+    def find(self, match, attr):
+        '''
+        Find nodes depending on the given property and attributes 
+        '''
+        # FIXME: add attr checker
+        ans = []
+        for i in self.w_vertices:
+            if match == i[attr]:
+                ans.append(i)
+        return ans
+    
+    def search_by_word(self, word):
+        """
+        Search the nodes by word 
+        (due to some sentence might contain several same words
+        this function returns the list)
+
+        """
+        return self.find(word, 'form')
+    
+    
+    def remove_node(self, word_id):
+        to_remove = self.find(word_id, "wid")[0]
+        for i, c in enumerate(to_remove.hlink.children):
+            if c.wid == to_remove.wid:
+                to_remove.hlink.children.remove(i)
+        def remove(wv):
+            if not wv.children:
+                self.w_vertices.remove(wv.wid)
+                return
+            for ch in wv.children:
+                self.rem(ch)
+            self.w_vertices.remove(wv.word_id)
+        remove(to_remove)
+        #self.w_vertices.remove(word_id)
+
+    def add_node(self, wv: WordVertex):
+        if isinstance(wv.head, int):
+            AttributeError("To add the node, it has to have a head attribute")
+        if wv.hlink < 0 and wv.head > len(self.w_vertices) - 1:
+            return ValueError(f"The head attribute must be in range from 0 to max word count ({len(self.w_vertices)} here)")
+        wv.wid = len(self.id_set)
+        self._add_node(wv)
+        found_link = self.w_vertices(wv['head'], 'wid')[0]
+        found_link['children'].append(self.w_vertices[-1])
+        wv.hlink = found_link
+        
+    def get_nx(self, property="form"):
+        '''
+        Get sentence graph as NetworkX DiGraph
+        proprerty see plot()
+        '''
+        g = nx.DiGraph()
+        nodes = [(vex['wid'], get_property(vex, property))
+                         for vex in self.w_vertices]
+        edges = [(x['hlink']['wid'], x['wid'], )
+                         for x in self.w_vertices if x['hlink'] != None]
+        # don't forget to add a virtual root node
+        nodes.append((0, {property : "root"}))
+        edges.append((0, self.root.wid))
+        nodes.sort(key=lambda x: x[0])
+        edges.sort(key=lambda x: x[0])
+
+        g.add_nodes_from(nodes)
+        g.add_edges_from(edges)
+        
+        return g
+
+    def plot(self, fsize=(16, 10), property="form"):
+        """
+        Plot graph with NetworkX
+        proprerty One of ["form", "pos", "wid", "morpho"] that will be node annotation
+        """
+        if property not in ["form", "pos", "wid", "morpho"]:
+            raise ValueError("Wrong property name")
+        G = self.get_nx(property)
+        plt.figure(figsize=fsize)
+        H = nx.convert_node_labels_to_integers(G,)
+        mapping = {x: G.nodes()[y][property] for x, y in enumerate(G.nodes())}
+        try:
+            pos = graphviz_layout(H, prog="dot")
+            nx.draw_networkx(G, pos, nodelist=None, labels=mapping)
+        except FileNotFoundError:
+            raise ImportError(
+                "Looks like you forget to install graphviz program. Please, install it typing in console 'sudo apt install graphviz'")
+        plt.show()
+
+
+class SentenceGraph(Span):
+    '''
+        This class represents a whole sentence dependency tree.
+        It takes the sentence writen in conluu-2014 format and produces
+        hendfull structure to operate it as a graph.
+    '''
 
     def __repr__(self):
         sent_len = len(self.w_vertices) 
@@ -119,13 +223,7 @@ class SentenceGraph:
         repr_str += "...<SentenceGraph>"
         return repr_str.format(*self.w_vertices[:sent_len])
 
-    def get_source(self):
-        """Returns space concatatenated source text 
-
-        Returns:
-            str: Soure text
-        """
-        return " ".join([w.form for w in self.w_vertices[1:]])
+    
 
     def _get_np(self, node, np):
         if node["pos"] == "NOUN":
@@ -151,15 +249,6 @@ class SentenceGraph:
         else:
             self._get_np(self.root, noun_phrases)
         return noun_phrases
-
-    def search_by_word(self, word):
-        """
-        Search the nodes by word 
-        (due to some sentence might contain several same words
-        this function returns the list)
-
-        """
-        return self.find(word, 'form')
 
 
     def _orig_dtype(self, node):
@@ -223,87 +312,12 @@ class SentenceGraph:
             sub_sents.append(' '.join(new_sub))
         return sub_sents
     
-    def find(self, match, attr):
-        '''
-        Find nodes depending on the given property and attributes 
-        '''
-        # FIXME: add attr checker
-        ans = []
-        for i in self.w_vertices:
-            if match == i[attr]:
-                ans.append(i)
-        return ans
 
-    def remove_node(self, word_id):
-        to_remove = self.find(word_id, "wid")[0]
-        for i, c in enumerate(to_remove.hlink.children):
-            if c.wid == to_remove.wid:
-                to_remove.hlink.children.remove(i)
-        def remove(wv):
-            if not wv.children:
-                self.w_vertices.remove(wv.wid)
-                return
-            for ch in wv.children:
-                self.rem(ch)
-            self.w_vertices.remove(wv.word_id)
-        remove(to_remove)
-        #self.w_vertices.remove(word_id)
-
-    def add_node(self, wv: WordVertex):
-        if isinstance(wv.head, int):
-            AttributeError("To add the node, it has to have a head attribute")
-        if wv.hlink < 0 and wv.head > len(self.w_vertices) - 1:
-            return ValueError(f"The head attribute must be in range from 0 to max word count ({len(self.w_vertices)} here)")
-        wv.wid = len(self.id_set)
-        self._add_node(wv)
-        found_link = self.w_vertices(wv['head'], 'wid')[0]
-        found_link['children'].append(self.w_vertices[-1])
-        wv.hlink = found_link
         
-
     def _add_node(self, wv):
         self.w_vertices.append(wv)
         self.id_set.add(wv.wid)
 
-    def get_nx(self, property="form"):
-        '''
-        Get sentence graph as NetworkX DiGraph
-        proprerty see plot()
-        '''
-        g = nx.DiGraph()
-        nodes = [(vex['wid'], get_property(vex, property))
-                         for vex in self.w_vertices]
-        edges = [(x['hlink']['wid'], x['wid'], )
-                         for x in self.w_vertices if x['hlink'] != None]
-        # don't forget to add a virtual root node
-        nodes.append((0, {property : "root"}))
-        edges.append((0, self.root.wid))
-        nodes.sort(key=lambda x: x[0])
-        edges.sort(key=lambda x: x[0])
-
-        g.add_nodes_from(nodes)
-        g.add_edges_from(edges)
-        
-        return g
-
-    def plot(self, fsize=(16, 10), property="form"):
-        """
-        Plot graph with NetworkX
-        proprerty One of ["form", "pos", "wid", "morpho"] that will be node annotation
-        """
-        if property not in ["form", "pos", "wid", "morpho"]:
-            raise ValueError("Wrong property name")
-        G = self.get_nx(property)
-        plt.figure(figsize=fsize)
-        H = nx.convert_node_labels_to_integers(G,)
-        mapping = {x: G.nodes()[y][property] for x, y in enumerate(G.nodes())}
-        try:
-            pos = graphviz_layout(H, prog="dot")
-            nx.draw_networkx(G, pos, nodelist=None, labels=mapping)
-        except FileNotFoundError:
-            raise ImportError(
-                "Looks like you forget to install graphviz program. Please, install it typing in console 'sudo apt install graphviz'")
-        plt.show()
 
 
 class TextParser:
@@ -340,19 +354,21 @@ class TextParser:
         '''
         Build graph from sentence representing in CoNLLU-2014 format
         '''
-        sg = SentenceGraph()
-        for i in conllu_sentence:
+        verteces = []
+        root_idx = None
+        for i, w in enumerate(conllu_sentence):
             morph = None
-            if i['feats'] != None:
-                # morph = "|".join([k+'='+ v for k,v in i['feats'].items() ])
-                morph = Morpho(i['feats'])
+            if w['feats'] != None:
+                morph = Morpho(w['feats'])
                 if mystem_translate:
                     morph.gender = UD2MYSTEM_GENDER_MAP[morph.gender]
-            sg._add_node(WordVertex(
-                i['id'], i['head'], i['lemma'], i['upostag'], i['deprel'], i['form'], morph))
+            verteces.append(WordVertex(w['id'], w['head'], w['lemma'], w['upostag'], w['deprel'], w['form'], morph))
+            if w["head"] == 0:
+                root_idx = i
+        sg = SentenceGraph(wv_list=verteces, root_idx=root_idx)
 
         if syntax_parse:
-            self._add_root(sg)
+            #self._add_root(sg)
             self._fill_children_verticles(sg)
             self._fill_head_verticles(sg)
         
